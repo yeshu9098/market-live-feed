@@ -6,6 +6,7 @@ import json
 from utils import get_smartapi_session
 import os
 import time
+from decouple import config
 
 app = Flask(__name__)
 sockets = Sockets(app)
