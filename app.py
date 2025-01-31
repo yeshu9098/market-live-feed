@@ -8,14 +8,16 @@ import os
 import time
 from decouple import config
 
+
+
 app = Flask(__name__)
 sockets = Sockets(app)
 
 API_KEY = config('API_KEY')
 USERNAME = config('USERNAME')
-
 correlation_id = "abc123"
 mode = 1
+
 
 live_data = []
 data_lock = Lock()
@@ -23,10 +25,11 @@ data_lock = Lock()
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TOKENS_FILE_PATH = os.path.join(BASE_DIR, "tokens.json")
 
-def load_initial_tokens():
-    global token_list
-    token_list = load_tokens_from_file()
-    print(f"Loaded tokens: {token_list}")
+
+# def load_initial_tokens():
+#     global token_list
+#     token_list = load_tokens_from_file()
+#     print(f"Loaded tokens: {token_list}")
 
 def save_tokens_to_file(tokens):
     with open(TOKENS_FILE_PATH, "w") as file:
@@ -39,8 +42,8 @@ def load_tokens_from_file():
     except FileNotFoundError:
         return []
 
-token_list = load_tokens_from_file()
-print(token_list)
+
+
 
 
 class LiveDataStream:
@@ -78,15 +81,21 @@ class LiveDataStream:
     def on_open(self, wsapp):
         """Handle WebSocket open event."""
         try:
+            token_list = load_tokens_from_file()
             if token_list:
+                print(f"Subscribing to tokens on open: {token_list}")
+
+                # Subscribe to the updated token list
                 self.sws.subscribe(correlation_id, mode, token_list)
-                print("Info: WebSocket connection opened and subscribed.")
                 self.connected = True
+                print("Info: Subscription successful.")
             else:
-                print("Warning: No tokens to subscribe. Please update the token list.")
+                print("Warning: No tokens available for subscription.")
         except Exception as e:
-            print(f"Error: Subscription failed: {str(e)}")
+            print(f"Error: Subscription failed on open: {str(e)}")
             self.connected = False
+
+
 
     def on_data(self, wsapp, message):
         """Handle incoming WebSocket data."""
@@ -113,22 +122,34 @@ class LiveDataStream:
         """Handle WebSocket close event."""
         print("Warning: WebSocket connection closed.")
         self.connected = False
-        self.retry_connection()
+
 
     def retry_connection(self):
-        """Retry the WebSocket connection."""
+        # """Retry the WebSocket connection."""
         # print("Info: Retrying WebSocket connection...")
-        self.connected = False
-        if self.thread and self.thread.is_alive():
-            self.thread.join()
+        # if self.sws:
+        #     try:
+        #         print("Info: Closing existing WebSocket connection...")
+        #         self.sws.close_connection()
+        #     except Exception as e:
+        #         print(f"Warning: Error closing WebSocket: {str(e)}")
 
-        self.thread = Thread(target=self.initialize_connection, daemon=True)
-        self.thread.start()
-        time.sleep(2)
-        if token_list:
-            print(f"Subscribing to updated token list: {token_list}")
+        # # Ensure proper cleanup
+        # self.sws = None
+        # self.connected = False
+        # time.sleep(1)
+
+        # Reinitialize connection
+        # self.initialize_connection()
+        # time.sleep(2)  # Allow connection to stabilize
+
+        if self.connected:
+            token_list = load_tokens_from_file()
+            print(f"Subscribing to tokens: {token_list}")
             self.sws.subscribe(correlation_id, mode, token_list)
-        # print("Info: WebSocket reconnected.")
+        else:
+            print("Error: WebSocket not connected; subscription failed.")
+
 
     def stop_connection(self):
         """Stop WebSocket connection."""
@@ -136,8 +157,12 @@ class LiveDataStream:
             self.sws.close_connection()
 
 
+
+
 # Initialize LiveDataStream
 data_stream = LiveDataStream()
+
+
 
 
 @app.route('/live-data', methods=['GET'])
@@ -145,6 +170,7 @@ def get_live_data():
     """Fetch the live data."""
     with data_lock:
         return jsonify(live_data), 200
+
 
 
 @app.route('/update-tokens', methods=['POST'])
@@ -157,13 +183,16 @@ def update_tokens():
         with data_lock:
             token_list = new_tokens
             save_tokens_to_file(token_list)
+            live_data.clear()  # Clear old data
 
-        print("Retrying WebSocket connection after updating tokens.")
+        print("Info: Tokens updated. Retrying WebSocket connection...")
         data_stream.retry_connection()
 
         return jsonify({"message": "Token list updated successfully", "token_list": token_list}), 200
     except Exception as e:
+        print(f"Error updating tokens: {str(e)}")
         return jsonify({"error": str(e)}), 400
+
 
 
 
@@ -177,8 +206,9 @@ def start_websocket_stream():
         print("Error: Failed to start WebSocket streaming due to authentication error.")
 
 
+
 if __name__ == '__main__':
-    load_initial_tokens()
+    # load_initial_tokens()
     start_websocket_stream()
 
     app.debug = True
